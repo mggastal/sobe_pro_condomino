@@ -42,7 +42,8 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data.json .last_build imgs/ 2>/dev/null || true
+          git add data.json .last_build
+          if [ -d imgs ]; then git add imgs/; fi
           if git diff --staged --quiet; then
             echo "Nada mudou — sem commit."
             exit 0
