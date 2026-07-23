@@ -1492,15 +1492,18 @@ function filterBdRaw(rawArr, keyFn){
   let totalSpend=0;
   filtered.forEach(r=>{
     const k=keyFn(r);
-    if(!map[k]) map[k]={n:k,spend:0,ld:0};
+    if(!map[k]) map[k]={n:k,spend:0,ld:0,imp:0,reach:0,engagement:0};
     map[k].spend+=r.sp; map[k].ld+=r.ld;
+    map[k].imp+=(r.imp||0); map[k].reach+=(r.rch||0); map[k].engagement+=(r.eng||0);
     totalSpend+=r.sp;
   });
   return Object.values(map)
     .filter(v=>v.spend>0)
     .map(v=>({...v,spend:r2(v.spend),
       pct:totalSpend>0?r2(v.spend/totalSpend*100):null,
-      cpl:v.ld>0?r2(v.spend/v.ld):null}))
+      cpl:v.ld>0?r2(v.spend/v.ld):null,
+      cpm:v.imp>0?r2(v.spend/v.imp*1000):null,
+      cpe:v.engagement>0?r2(v.spend/v.engagement):null}))
     .sort((a,b)=>b.ld-a.ld);
 }
 
@@ -1863,28 +1866,46 @@ function renderSeg(){
   function segBlock(tableId, chartId, data, lbl){
     const tEl=document.getElementById(tableId);
     if(!tEl) return;
-    const totalSpend=data.reduce((s,r)=>s+(r.spend||0),0);
     if(!data?.length){
       tEl.innerHTML='<div style="padding:8px;font-size:11px;color:var(--muted)">Sem dados</div>';
       return;
     }
-    // Tabela com %
-    tEl.innerHTML=`<table style="width:100%;table-layout:fixed">
+    const totalSpend=data.reduce((s,r)=>s+(r.spend||0),0);
+
+    // Métrica segue o modo do gráfico (Conversões / Alcance / Engajamento)
+    const temEng = data.some(r=>(r.engagement||0)>0);
+    let M;
+    if(chartMode==='reconhecimento'){
+      M={barKey:'reach',barLbl:'Alcance',colLbl:'Alc.',barFmt:fN,
+         lineKey:'cpm',lineLbl:'CPM',lineCls:()=>'', stepSize:undefined};
+    } else if(chartMode==='engajamento' && temEng){
+      M={barKey:'engagement',barLbl:'Engajamentos',colLbl:'Engaj.',barFmt:fN,
+         lineKey:'cpe',lineLbl:'CPE',lineCls:()=>'', stepSize:undefined};
+    } else {
+      M={barKey:'ld',barLbl:'Leads',colLbl:'Lds',barFmt:fN,
+         lineKey:'cpl',lineLbl:'CPL',lineCls:cplCls, stepSize:1};
+    }
+    // Engajamento pedido mas indisponível na exportação dos breakdowns
+    const avisoEng = (chartMode==='engajamento' && !temEng)
+      ? '<div style="padding:6px 8px;font-size:10px;color:var(--muted2);line-height:1.4">Engajamento não disponível por segmento — as abas de breakdown não exportam essa coluna. Exibindo conversões.</div>'
+      : '';
+
+    tEl.innerHTML=avisoEng+`<table style="width:100%;table-layout:fixed">
       <thead><tr>
         <th style="width:40%">${lbl}</th>
         <th class="num" style="width:30%">Invest.</th>
-        <th class="num" style="width:15%">Lds</th>
-        <th class="num" style="width:15%">CPL</th>
+        <th class="num" style="width:15%">${M.colLbl}</th>
+        <th class="num" style="width:15%">${M.lineLbl}</th>
       </tr></thead>
       <tbody>${data.map(r=>`<tr>
         <td style="font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:0" title="${r.n}">${r.n}</td>
         <td class="num" style="font-size:10px;white-space:nowrap">${fR(r.spend)} <span style="color:var(--muted2);font-size:9px">${totalSpend>0?'('+r2(r.spend/totalSpend*100).toFixed(1)+'%)':''}</span></td>
-        <td class="num" style="font-size:10px">${fN(r.ld)}</td>
-        <td class="num ${cplCls(r.cpl)}" style="font-size:10px">${fR(r.cpl)}</td>
+        <td class="num" style="font-size:10px">${M.barFmt(r[M.barKey]||0)}</td>
+        <td class="num ${M.lineCls(r[M.lineKey])}" style="font-size:10px">${fR(r[M.lineKey])}</td>
       </tr>`).join('')}</tbody>
     </table>`;
 
-    // Gráfico Chart.js — barras para leads, linha para CPL
+    // Gráfico Chart.js — barras da métrica, linha do custo
     const cEl=document.getElementById(chartId);
     if(!cEl) return;
     dc(chartId);
@@ -1892,20 +1913,20 @@ function renderSeg(){
     const accent=COR_ACENTO;
     const accentRgb=accent.replace('#','').match(/.{2}/g)?.map(h=>parseInt(h,16))||[102,89,165];
     const accentAlpha=`rgba(${accentRgb.join(',')},0.75)`;
-    const accentLine=`rgba(${accentRgb.join(',')},1)`;
-    const maxLdVal = Math.max(...data.map(r=>r.ld||0), 1);
-    const sugMaxLd = Math.ceil(maxLdVal * 1.3); // 30% de margem para rótulos
-    const maxCplVal = Math.max(...data.map(r=>r.cpl||0), 1);
-    const sugMaxCpl = maxCplVal * 1.3; // 30% de margem para rótulos CPL
+    const maxBarVal = Math.max(...data.map(r=>r[M.barKey]||0), 1);
+    const sugMaxBar = Math.ceil(maxBarVal * 1.3); // 30% de margem para rótulos
+    const maxLineVal = Math.max(...data.map(r=>r[M.lineKey]||0), 1);
+    const sugMaxLine = maxLineVal * 1.3;
     const txtColor = DARK() ? '#e5e7eb' : '#111827';
     CH[chartId]=new Chart(cEl,{
       data:{
         labels,
         datasets:[
-          {type:'bar',label:'Leads',data:data.map(r=>r.ld||0),
+          {type:'bar',label:M.barLbl,data:data.map(r=>r[M.barKey]||0),
            backgroundColor:accentAlpha,borderRadius:4,yAxisID:'y1',
-           datalabels:{display:showLabels,color:txtColor,font:{size:labelSize,weight:'bold'},anchor:'end',align:'top'}},
-          {type:'line',label:'CPL',data:data.map(r=>r.cpl),
+           datalabels:{display:showLabels,color:txtColor,font:{size:labelSize,weight:'bold'},anchor:'end',align:'top',
+             formatter:v=>v!=null?M.barFmt(v):''}},
+          {type:'line',label:M.lineLbl,data:data.map(r=>r[M.lineKey]),
            borderColor:txtColor,backgroundColor:'transparent',
            borderWidth:2,pointRadius:4,pointBackgroundColor:txtColor,
            borderDash:[4,3],tension:0.3,yAxisID:'y2',spanGaps:true,
@@ -1922,10 +1943,10 @@ function renderSeg(){
               const lbl=this.getLabelForValue(val);
               return lbl.length>12?lbl.substring(0,12)+'…':lbl;
             }}},
-          y1:{position:'left',beginAtZero:true,suggestedMax:sugMaxLd,
+          y1:{position:'left',beginAtZero:true,suggestedMax:sugMaxBar,
               grid:{color:GRID()},
-              ticks:{color:TXT(),font:{size:9},stepSize:1}},
-          y2:{position:'right',beginAtZero:true,suggestedMax:sugMaxCpl,grid:{display:false},
+              ticks:{color:TXT(),font:{size:9},stepSize:M.stepSize,callback:v=>M.barFmt(v)}},
+          y2:{position:'right',beginAtZero:true,suggestedMax:sugMaxLine,grid:{display:false},
               ticks:{color:TXT(),font:{size:9},callback:v=>fR(v)}},
         }
       }
