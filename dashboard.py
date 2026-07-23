@@ -36,7 +36,7 @@ LOCAL_XLSX       = {}
 
 NOME_CLIENTE     = "Pró Condomíno"
 LOGO_LETRA       = "PC"
-COR_ACENTO       = "#1F6FB2"
+COR_ACENTO       = "#E30B15"
 
 LANCAMENTO_COD   = ""
 USAR_PESQUISA    = False
