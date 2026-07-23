@@ -319,6 +319,14 @@ def meta_breakdowns(df):
         agg=agg[agg["spend"]>0].copy()
         agg["cpl"]=(agg["spend"]/agg["leads"]).where(agg["leads"]>0).round(2)
         return [{"n":str(r[dim]),"spend":round(float(r["spend"]),2),"ld":int(r["leads"]),"cpl":safe(r["cpl"])} for _,r in agg.iterrows()]
+    # Métricas extras por segmento (para os modos Alcance e Engajamento nos gráficos)
+    ENG_COLS_BD = ["Action Post Engagement","Action Post Engagements"]
+    def _extras(d):
+        d["imp"] = to_num(d["Impressions"]) if "Impressions" in d.columns else pd.Series(0,index=d.index)
+        d["rch"] = to_num(d["Reach (Estimated)"]) if "Reach (Estimated)" in d.columns else pd.Series(0,index=d.index)
+        _ec = [c for c in ENG_COLS_BD if c in d.columns]
+        d["eng"] = to_num(d[_ec[0]]) if _ec else pd.Series(0,index=d.index)
+        return d, bool(_ec)
     try:
         df_ga=read_tab("breakdown-gender-age"); df_ga["date"]=pd.to_datetime(df_ga["Date"],errors="coerce")
         df_ga["spend"]=to_num(df_ga["Spend (Cost, Amount Spent)"])
@@ -328,8 +336,9 @@ def meta_breakdowns(df):
         df_ga["age"]=df_ga["Age (Breakdown)"].astype(str)
         df_ga["gender"]=df_ga["Gender (Breakdown)"].astype(str)
         df_ga["is_lct"]=df_ga["Campaign Name"].str.contains(LANCAMENTO_COD,na=False,case=False) if "Campaign Name" in df_ga.columns and LANCAMENTO_COD else True
+        df_ga,_ga_has_eng=_extras(df_ga)
         df_ga=df_ga.dropna(subset=["date"])
-    except Exception as e: print(f"  Aviso GA: {e}"); df_ga=pd.DataFrame()
+    except Exception as e: print(f"  Aviso GA: {e}"); df_ga=pd.DataFrame(); _ga_has_eng=False
     try:
         df_pt=read_tab("breakdown-platform"); df_pt["date"]=pd.to_datetime(df_pt["Date"],errors="coerce")
         df_pt["spend"]=to_num(df_pt["Spend (Cost, Amount Spent)"])
@@ -338,8 +347,12 @@ def meta_breakdowns(df):
         df_pt["leads"]=sum(to_num(df_pt[c]) for c in available_pt) if available_pt else pd.Series(0,index=df_pt.index)
         df_pt["platform"]=df_pt["Platform Position (Breakdown)"].astype(str)
         df_pt["is_lct"]=df_pt["Campaign Name"].str.contains(LANCAMENTO_COD,na=False,case=False) if "Campaign Name" in df_pt.columns and LANCAMENTO_COD else True
+        df_pt,_pt_has_eng=_extras(df_pt)
         df_pt=df_pt.dropna(subset=["date"])
-    except Exception as e: print(f"  Aviso PT: {e}"); df_pt=pd.DataFrame()
+    except Exception as e: print(f"  Aviso PT: {e}"); df_pt=pd.DataFrame(); _pt_has_eng=False
+    if not (_ga_has_eng and _pt_has_eng):
+        print("     AVISO: abas de breakdown sem coluna de engajamento "
+              f"({' / '.join(ENG_COLS_BD)}) — modo Engajamento ficará indisponível nos gráficos de segmento")
     result={}
     for pname,n in [("all",0)]:
         start=hoje_bd-pd.Timedelta(days=n-1) if n>0 else None
@@ -369,21 +382,26 @@ def meta_breakdowns(df):
         _g=df_ga.dropna(subset=["date"]).copy()
         _g["_camp"]=_g["Campaign Name"].astype(str) if "Campaign Name" in _g.columns else ""
         _g=_g.groupby(["date","age","gender","_camp","is_lct"],as_index=False).agg(
-            sp=("spend","sum"), ld=("leads","sum"))
+            sp=("spend","sum"), ld=("leads","sum"),
+            imp=("imp","sum"), rch=("rch","sum"), eng=("eng","sum"))
         for _,r in _g.iterrows():
             raw_ga.append({'d':r['date'].strftime('%d/%m/%Y'),'age':str(r['age']),'gen':str(r['gender']),
                            'sp':round(float(r['sp']),2),'ld':int(r['ld']),
+                           'imp':int(r['imp']),'rch':int(r['rch']),'eng':int(r['eng']),
                            'lct':bool(r['is_lct']),'camp':str(r['_camp'])})
     raw_pt=[]
     if len(df_pt)>0:
         _p=df_pt.dropna(subset=["date"]).copy()
         _p["_camp"]=_p["Campaign Name"].astype(str) if "Campaign Name" in _p.columns else ""
         _p=_p.groupby(["date","platform","_camp","is_lct"],as_index=False).agg(
-            sp=("spend","sum"), ld=("leads","sum"))
+            sp=("spend","sum"), ld=("leads","sum"),
+            imp=("imp","sum"), rch=("rch","sum"), eng=("eng","sum"))
         for _,r in _p.iterrows():
             raw_pt.append({'d':r['date'].strftime('%d/%m/%Y'),'plat':str(r['platform']),
                            'sp':round(float(r['sp']),2),'ld':int(r['ld']),
+                           'imp':int(r['imp']),'rch':int(r['rch']),'eng':int(r['eng']),
                            'lct':bool(r['is_lct']),'camp':str(r['_camp'])})
+    result['_has_eng'] = bool(_ga_has_eng and _pt_has_eng)
     print(f"     Raw breakdowns agregados: GA {len(raw_ga)} | PT {len(raw_pt)} linhas")
     result['_raw_ga']=raw_ga
     result['_raw_pt']=raw_pt
