@@ -44,7 +44,7 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;fon
 
 /* SIDEBAR */
 .sb{background:#0f1523;display:flex;flex-direction:column;position:sticky;top:0;height:100vh;overflow-y:auto;}
-.sb-logo{display:flex;align-items:center;gap:10px;padding:18px 16px 14px;border-bottom:1px solid rgba(255,255,255,.07);}
+.sb-logo{display:flex;align-items:center;gap:10px;padding:16px 14px 14px;border-bottom:1px solid rgba(255,255,255,.07);}
 .logo-box{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-size:16px;font-weight:800;color:#fff;flex-shrink:0;}
 .logo-name{font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:#fff;}
 .logo-sub{font-size:10px;color:rgba(255,255,255,.3);text-transform:uppercase;letter-spacing:1.5px;}
@@ -346,7 +346,7 @@ details.filter-highlight[open] .filter-arrow{transform:rotate(180deg);}
 
 <aside class="sb" id="sidebar">
   <div class="sb-logo">
-    <img src="logo.png" id="clientLogoImg" alt="Logo" style="width:160px;height:40px;object-fit:contain;object-position:left center;">
+    <img src="logo.png" id="clientLogoImg" alt="Logo" style="width:100%;max-height:66px;height:auto;object-fit:contain;object-position:left center;display:block;">
   </div>
   <div class="sb-section">
     <div class="sb-platform-group">
@@ -2968,10 +2968,17 @@ function ajustarPaddingContent(){
   const ct=document.querySelector('.content');
   if(tb&&ct){
     const h=tb.getBoundingClientRect().height;
-    if(h>0) ct.style.paddingTop=(h+10)+'px';
+    // 'important' para vencer o padding-top fixo do media query mobile
+    if(h>0) ct.style.setProperty('padding-top',(h+12)+'px','important');
   }
 }
-// Rodar imediatamente + após fonts/imgs carregarem + no resize
+// Recalcula sozinho sempre que a topbar mudar de altura:
+// quebra de linha, carregamento das fontes, troca de cidade, resize.
+(function(){
+  const tb=document.querySelector('.topbar');
+  if(tb && window.ResizeObserver) new ResizeObserver(ajustarPaddingContent).observe(tb);
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(ajustarPaddingContent);
+})();
 ajustarPaddingContent();
 document.addEventListener('DOMContentLoaded', ajustarPaddingContent);
 window.addEventListener('load', ajustarPaddingContent);
