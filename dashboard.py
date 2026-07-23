@@ -224,13 +224,15 @@ def meta_raw(df):
     adset_st={(c,a):_pick_status(g) for (c,a),g in df.groupby(["campaign","adset"])} if has_status else {}
     agg=df.groupby(["date","campaign","adset","is_lct"]).agg(
         spend=("spend","sum"),leads=("leads","sum"),impressions=("impressions","sum"),
-        link_clicks=("link_clicks","sum"),clicks=("clicks","sum"),page_view=("page_view","sum")
+        link_clicks=("link_clicks","sum"),clicks=("clicks","sum"),page_view=("page_view","sum"),
+        engagement=("engagement","sum"),reach=("reach","sum")
     ).reset_index()
     for _,r in agg.iterrows():
         rows.append({"d":r["date"].strftime("%d/%m/%Y"),"c":str(r["campaign"]),"a":str(r["adset"]),
             "lct":bool(r["is_lct"]),"sp":round(float(r["spend"]),2),
             "ld":int(r["leads"]),"imp":int(r["impressions"]),
             "lc":int(r["link_clicks"]),"cl":int(r["clicks"]),"pv":int(r["page_view"]),
+            "eng":int(r["engagement"]),"rch":int(r["reach"]),
             "sc":camp_st.get(str(r["campaign"]),""),
             "sa":adset_st.get((str(r["campaign"]),str(r["adset"])),"")})
     return rows
@@ -360,22 +362,29 @@ def meta_breakdowns(df):
             if lname not in result: result[lname]={}
             result[lname][pname]={"age":age_d,"gender":gen_d,"platform":plat_d}
     # Dados raw para filtros dinâmicos no JS
+    # Agregados por (data, segmento, campanha): o dash só usa esses campos,
+    # então colapsar o nível de anúncio/conjunto é lossless e reduz muito o JSON.
     raw_ga=[]
     if len(df_ga)>0:
-        for _,r in df_ga.iterrows():
-            if pd.isna(r['date']): continue
+        _g=df_ga.dropna(subset=["date"]).copy()
+        _g["_camp"]=_g["Campaign Name"].astype(str) if "Campaign Name" in _g.columns else ""
+        _g=_g.groupby(["date","age","gender","_camp","is_lct"],as_index=False).agg(
+            sp=("spend","sum"), ld=("leads","sum"))
+        for _,r in _g.iterrows():
             raw_ga.append({'d':r['date'].strftime('%d/%m/%Y'),'age':str(r['age']),'gen':str(r['gender']),
-                           'sp':round(float(r['spend']),2),'ld':int(r['leads']),
-                           'lct':bool(r['is_lct']),
-                           'camp':str(r['Campaign Name']) if 'Campaign Name' in r.index else ''})
+                           'sp':round(float(r['sp']),2),'ld':int(r['ld']),
+                           'lct':bool(r['is_lct']),'camp':str(r['_camp'])})
     raw_pt=[]
     if len(df_pt)>0:
-        for _,r in df_pt.iterrows():
-            if pd.isna(r['date']): continue
+        _p=df_pt.dropna(subset=["date"]).copy()
+        _p["_camp"]=_p["Campaign Name"].astype(str) if "Campaign Name" in _p.columns else ""
+        _p=_p.groupby(["date","platform","_camp","is_lct"],as_index=False).agg(
+            sp=("spend","sum"), ld=("leads","sum"))
+        for _,r in _p.iterrows():
             raw_pt.append({'d':r['date'].strftime('%d/%m/%Y'),'plat':str(r['platform']),
-                           'sp':round(float(r['spend']),2),'ld':int(r['leads']),
-                           'lct':bool(r['is_lct']),
-                           'camp':str(r['Campaign Name']) if 'Campaign Name' in r.index else ''})
+                           'sp':round(float(r['sp']),2),'ld':int(r['ld']),
+                           'lct':bool(r['is_lct']),'camp':str(r['_camp'])})
+    print(f"     Raw breakdowns agregados: GA {len(raw_ga)} | PT {len(raw_pt)} linhas")
     result['_raw_ga']=raw_ga
     result['_raw_pt']=raw_pt
     return result
